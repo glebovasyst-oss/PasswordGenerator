@@ -149,10 +149,10 @@ def load_or_generate_keyfile(master_password: str) -> bytes:
 
 def get_fernet(master_password: str) -> Fernet:
     """
-    Возвращает объект Fernet. Ключ derives from мастер-пароля,
-    чтобы без мастер-пароля расшифровать было невозможно.
+    Возвращает объект Fernet, используя ключ из файла .key.
+    Без этого файла и корректного мастер-пароля расшифровка невозможна.
     """
-    key = generate_key(master_password)
+    key = load_or_generate_keyfile(master_password)
     return Fernet(key)
 
 
@@ -215,9 +215,15 @@ def cmd_get(conn: sqlite3.Connection, master_password: str) -> None:
         print("Ошибка расшифровки. Возможно, мастер-пароль неверен или ключ повреждён.")
         return
 
-    print(f"\n  Название: {name}")
-    print(f"  Логин:    {login}")
-    print(f"  Пароль:   {password}\n")
+    try:
+        import pyperclip
+        pyperclip.copy(password)
+        print("Пароль скопирован в буфер обмена.")
+    except Exception:
+        print(f"\n  Название: {name}")
+        print(f"  Логин:    {login}")
+        print(f"  Пароль:   {password}\n")
+        print("Не удалось скопировать в буфер обмена. Установите pyperclip для автоматического копирования.")
 
 
 def cmd_list(conn: sqlite3.Connection) -> None:
@@ -262,9 +268,25 @@ def cmd_new(conn: sqlite3.Connection, master_password: str) -> None:
         return
 
     # Генерация пароля
-    alphabet = string.ascii_letters + string.digits + string.punctuation
-    length = int(input("Длина пароля (по умолчанию 16): ").strip() or "16")
+    length = input("Длина пароля (по умолчанию 16): ").strip() or "16"
+    try:
+        length = int(length)
+    except ValueError:
+        length = 16
     length = max(8, min(64, length))
+
+    exclude_similar = input("Исключить похожие символы (0, O, o, 1, l, I)? (y/N): ").strip().lower()
+    exclude_similar = exclude_similar in ("y", "yes", "д", "да")
+
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    if exclude_similar:
+        similar = "0Oo1lI"
+        alphabet = "".join(c for c in alphabet if c not in similar)
+
+    if not alphabet:
+        print("Слишком много ограничений для генерации пароля.")
+        return
+
     password = "".join(secrets.choice(alphabet) for _ in range(length))
 
     print(f"\n  Сгенерированный пароль: {password}\n")
